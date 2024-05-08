@@ -20,13 +20,13 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     rho = rho.view(batch_size, 1, 1)
 
     covariance = torch.stack(
-        [torch.stack([sigma_x**2, rho*sigma_x*sigma_y], dim=-1),
-        torch.stack([rho*sigma_x*sigma_y, sigma_y**2], dim=-1)],
+        [torch.stack([sigma_x ** 2, rho * sigma_x * sigma_y], dim=-1),
+        torch.stack([rho * sigma_x * sigma_y, sigma_y ** 2], dim=-1)],
         dim=-2
     )
 
     # Check for positive semi-definiteness
-    determinant = (sigma_x**2) * (sigma_y**2) - (rho * sigma_x * sigma_y)**2
+    determinant = (sigma_x ** 2) * (sigma_y ** 2) - (rho * sigma_x * sigma_y) ** 2
     if (determinant <= 0).any():
         raise ValueError("Covariance matrix must be positive semi-definite")
 
@@ -94,12 +94,12 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
 
 def create_window(window_size, channel):
     def gaussian(window_size, sigma):
-        gauss = torch.exp(torch.tensor([-(x - window_size//2)**2/float(2*sigma**2) for x in range(window_size)]))
-        return gauss/gauss.sum()
+        gauss = torch.exp(torch.tensor([-(x - window_size // 2) ** 2 / float(2 * sigma ** 2) for x in range(window_size)]))
+        return gauss / gauss.sum()
 
     _1D_window = gaussian(window_size, 1.5).unsqueeze(1)
     _2D_window = _1D_window.mm(_1D_window.t()).float().unsqueeze(0).unsqueeze(0)
-    window = torch.autograd.Variable(_2D_window.expand(channel, 1, window_size, window_size).contiguous())
+    window = _2D_window.expand(channel, 1, window_size, window_size).contiguous().clone().requires_grad_(True)
 
     return window
 
@@ -146,7 +146,6 @@ def d_ssim_loss(img1, img2, window_size=11, size_average=True):
 # Combined Loss
 def combined_loss(pred, target, lambda_param=0.5):
     l1loss = nn.L1Loss()
-    # breakpoint()
     return (1 - lambda_param) * l1loss(pred, target) + lambda_param * d_ssim_loss(pred, target)
 
 # Read the config.yml file
@@ -193,7 +192,7 @@ num_samples = primary_samples + backup_samples
 PADDING = KERNEL_SIZE // 2
 image_path = image_file_name
 original_image = Image.open(image_path)
-# breakpoint()
+
 original_image = original_image.resize((image_size[0],image_size[1]))
 original_image = original_image.convert('RGB')
 original_array = np.array(original_image) # this will cause dimension swap
@@ -265,8 +264,8 @@ for epoch in range(num_epochs):
 
     batch_size = output.shape[0]
 
-    sigma_x = torch.sigmoid(output[:, 0])
-    sigma_y = torch.sigmoid(output[:, 1])
+    sigma_x = torch.nn.Softplus()(output[:, 0])
+    sigma_y = torch.nn.Softplus()(output[:, 1])
     rho = torch.tanh(output[:, 2])
     alpha = torch.sigmoid(output[:, 3])
     colours = torch.sigmoid(output[:, 4:7])
@@ -274,8 +273,8 @@ for epoch in range(num_epochs):
 
     colours_with_alpha  = colours * alpha.view(batch_size, 1)
     g_tensor_batch = generate_2D_gaussian_splatting(KERNEL_SIZE, sigma_x, sigma_y, rho, pixel_coords, colours_with_alpha, image_size, device)
-    # g_tensor_batch = generate_2D_gaussian_splatting(KERNEL_SIZE, sigma_x, sigma_y, rho, pixel_coords, colours_with_alpha, (810, 540, 3), device)
     loss = combined_loss(g_tensor_batch, target_tensor, lambda_param=0.2)
+    # loss = nn.MSELoss()(g_tensor_batch, target_tensor)
 
     optimizer.zero_grad()
 
@@ -391,5 +390,3 @@ for epoch in range(num_epochs):
         # with open (os.path.join(directory, "log.txt"), 'w') as f:
         #     for item in loss_history:
         #         f.write(f"{item}\n")
-
-        
