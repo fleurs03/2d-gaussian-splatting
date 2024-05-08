@@ -273,8 +273,8 @@ for epoch in range(num_epochs):
 
     colours_with_alpha  = colours * alpha.view(batch_size, 1)
     g_tensor_batch = generate_2D_gaussian_splatting(KERNEL_SIZE, sigma_x, sigma_y, rho, pixel_coords, colours_with_alpha, image_size, device)
-    loss = combined_loss(g_tensor_batch, target_tensor, lambda_param=0.2)
-    # loss = nn.MSELoss()(g_tensor_batch, target_tensor)
+    # loss = combined_loss(g_tensor_batch, target_tensor, lambda_param=0.2)
+    loss = nn.MSELoss()(g_tensor_batch, target_tensor)
 
     optimizer.zero_grad()
 
