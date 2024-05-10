@@ -57,12 +57,18 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     kernel_reshaped = kernel_normalized.repeat(1, 3, 1).view(batch_size * 3, kernel_size, kernel_size)
     kernel_rgb = kernel_reshaped.unsqueeze(0).reshape(batch_size, 3, kernel_size, kernel_size)
 
-    # Calculating the padding needed to match the image size
-    pad_h = image_size[0] - kernel_size
-    pad_w = image_size[1] - kernel_size
+    padi_h = max(kernel_size - image_size[0], 0)
+    padi_w = max(kernel_size - image_size[1], 0)
+    
+    padded_image_size = (image_size[0] + padi_h, image_size[1] + padi_w, image_size[2])
 
-    if pad_h < 0 or pad_w < 0:
-        raise ValueError("Kernel size should be smaller or equal to the image size.")
+    
+    # Calculating the padding needed to match the image size
+    pad_h = padded_image_size[0] - kernel_size
+    pad_w = padded_image_size[1] - kernel_size
+
+    # if pad_h < 0 or pad_w < 0:
+    #     raise ValueError("Kernel size should be smaller or equal to the image size.")
 
     # Adding padding to make kernel size equal to the image size
     padding = (pad_w // 2, pad_w // 2 + pad_w % 2,  # padding left and right
@@ -88,6 +94,7 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     final_image_layers = rgb_values_reshaped * kernel_rgb_padded_translated
     final_image = final_image_layers.sum(dim=0)
     final_image = torch.clamp(final_image, 0, 1)
+    final_image = final_image[:, padi_h // 2: padded_image_size[0] - (padi_h // 2 + padi_h % 2), padi_w // 2: padded_image_size[0] - (padi_w // 2 + padi_w % 2)]
     final_image = final_image.permute(1,2,0)
 
     return final_image
