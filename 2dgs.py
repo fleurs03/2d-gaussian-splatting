@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
 import torch.nn as nn
@@ -368,7 +370,7 @@ for epoch in range(num_epochs):
         # Display the image
         #plt.show(block=False)
         plt.subplots_adjust(wspace=0.1)  # Adjust this value to your preference
-        plt.pause(0.1)  # Brief pause
+        # plt.pause(0.1)  # Brief pause
 
         img = Image.fromarray((generated_array * 255).astype(np.uint8))
 
