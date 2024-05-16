@@ -1,11 +1,12 @@
-KERNEL_SIZE: 101
+KERNEL_SIZE: 105
 image_size: [256, 384, 3]
-primary_samples: 1000
-backup_samples: 4000
+primary_samples: 3
+backup_samples: 0
 num_epochs: 5001
 densification_interval: 300
 learning_rate: 0.01
 image_file_name: "input/tulip.JPG"
+show_comparison: False
 display_interval: 100
 gradient_threshold: 0.002
 gaussian_threshold: 0.002
