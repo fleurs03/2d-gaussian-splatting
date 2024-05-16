@@ -18,6 +18,10 @@ def create_window(window_size, channel):
     return window
 
 def _ssim(img1, img2, window, window_size, channel, size_average = True):
+    
+    img1 = img1.unsqueeze(0).permute(0, 3, 1, 2)
+    img2 = img2.unsqueeze(0).permute(0, 3, 1, 2)
+    
     mu1 = F.conv2d(img1, window, padding = window_size//2, groups = channel)
     mu2 = F.conv2d(img2, window, padding = window_size//2, groups = channel)
 
@@ -48,7 +52,7 @@ class SSIM(torch.nn.Module):
         self.window = create_window(window_size, self.channel)
 
     def forward(self, img1, img2):
-        (_, channel, _, _) = img1.size()
+        (_, _, channel) = img1.size()
 
         if channel == self.channel and self.window.data.type() == img1.data.type():
             window = self.window
@@ -66,7 +70,7 @@ class SSIM(torch.nn.Module):
         return _ssim(img1, img2, window, self.window_size, channel, self.size_average)
 
 def ssim(img1, img2, window_size = 11, size_average = True):
-    (_, channel, _, _) = img1.size()
+    (_, _, channel) = img1.size()
     window = create_window(window_size, channel)
     
     if img1.is_cuda:
@@ -81,4 +85,4 @@ def d_ssim_loss(pred, target, window_size=11, size_average=True):
 
 # Combined Loss
 def combined_loss(pred, target, w=0.5):
-    return w * torch.nn.MSELoss()(pred, target) + (1 - w) * d_ssim_loss(pred, target)
+    return (1 - w) * torch.nn.MSELoss()(pred, target) + w * d_ssim_loss(pred, target)

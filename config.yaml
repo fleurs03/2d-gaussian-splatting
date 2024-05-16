@@ -1,7 +1,7 @@
 KERNEL_SIZE: 105
 image_size: [256, 384, 3]
-primary_samples: 3
-backup_samples: 0
+primary_samples: 450
+backup_samples: 50
 num_epochs: 5001
 densification_interval: 300
 learning_rate: 0.01
