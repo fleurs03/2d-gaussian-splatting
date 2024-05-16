@@ -48,8 +48,16 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     kernel_reshaped = kernel_normalized.repeat(1, 3, 1).view(batch_size * 3, kernel_size, kernel_size)
     kernel_rgb = kernel_reshaped.unsqueeze(0).reshape(batch_size, 3, kernel_size, kernel_size)
 
+    # a bit confusing, but coords[:, 0] is the x-coordinate and coords[:, 1] is the y-coordinate
+    # while image_size[0] and image_size[1] are the height and width of the image, respectively
+
     padi_h = max(kernel_size - image_size[0], 0)
     padi_w = max(kernel_size - image_size[1], 0)
+
+    # zoom the coordinates so that padding the image won't mess up the affine transformation
+    coords[:, 0] = coords[:, 0] * image_size[1] / (image_size[1] + padi_w)
+    coords[:, 1] = coords[:, 1] * image_size[0] / (image_size[0] + padi_h)
+
     
     padded_image_size = (image_size[0] + padi_h, image_size[1] + padi_w, image_size[2])
 
