@@ -12,21 +12,24 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     if max_sigma > 2.0:
         zoom_factor = math.ceil(max_sigma / 2.0)
         kernel_size = kernel_size * zoom_factor
-        sigma_x = sigma_x / zoom_factor
-        sigma_y = sigma_y / zoom_factor
+        zoomed_sigma_x = sigma_x / zoom_factor
+        zoomed_sigma_y = sigma_y / zoom_factor
+    else:
+        zoomed_sigma_x = sigma_x
+        zoomed_sigma_y = sigma_y
 
-    sigma_x = sigma_x.view(batch_size, 1, 1)
-    sigma_y = sigma_y.view(batch_size, 1, 1)
+    zoomed_sigma_x = zoomed_sigma_x.view(batch_size, 1, 1)
+    zoomed_sigma_y = zoomed_sigma_y.view(batch_size, 1, 1)
     rho = rho.view(batch_size, 1, 1)
 
     covariance = torch.stack(
-        [torch.stack([sigma_x ** 2, rho * sigma_x * sigma_y], dim=-1),
-        torch.stack([rho * sigma_x * sigma_y, sigma_y ** 2], dim=-1)],
+        [torch.stack([zoomed_sigma_x ** 2, rho * zoomed_sigma_x * zoomed_sigma_y], dim=-1),
+        torch.stack([rho * zoomed_sigma_x * zoomed_sigma_y, zoomed_sigma_y ** 2], dim=-1)],
         dim=-2
     )
 
     # check for positive semi-definiteness
-    determinant = (sigma_x ** 2) * (sigma_y ** 2) - (rho * sigma_x * sigma_y) ** 2
+    determinant = (zoomed_sigma_x ** 2) * (zoomed_sigma_y ** 2) - (rho * zoomed_sigma_x * zoomed_sigma_y) ** 2
     if (determinant <= 0).any():
         raise ValueError("Covariance matrix must be positive semi-definite")
 
@@ -65,8 +68,11 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     padi_w = max(kernel_size - image_size[1], 0)
 
     # zoom the coordinates so that padding the image won't mess up the affine transformation
-    coords[:, 0] = coords[:, 0] * image_size[1] / (image_size[1] + padi_w)
-    coords[:, 1] = coords[:, 1] * image_size[0] / (image_size[0] + padi_h)
+
+    zoomed_coords_x = coords[:, 0] * image_size[1] / (image_size[1] + padi_w)
+    zoomed_coords_y = coords[:, 1] * image_size[0] / (image_size[0] + padi_h)
+
+    zoomed_coords = torch.stack([zoomed_coords_x, zoomed_coords_y], dim=-1)
 
     
     padded_image_size = (image_size[0] + padi_h, image_size[1] + padi_w, image_size[2])
@@ -92,7 +98,7 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     theta = torch.zeros(b, 2, 3, dtype=torch.float32, device=device)
     theta[:, 0, 0] = 1.0
     theta[:, 1, 1] = 1.0
-    theta[:, :, 2] = coords
+    theta[:, :, 2] = zoomed_coords
 
     # creating grid and performing grid sampling
     grid = F.affine_grid(theta, size=(b, c, h, w), align_corners=True)
