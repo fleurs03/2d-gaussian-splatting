@@ -1,10 +1,19 @@
 import numpy as np
 import torch.nn.functional as F
 import torch
+import math
 
 def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, colours, image_size=(256, 256, 3), device="cpu"):
 
     batch_size = colours.shape[0]
+
+    # zoom the sigma and kernel size to prevent gaussian from being cropped
+    max_sigma = max(sigma_x.max(), sigma_y.max())
+    if max_sigma > 2.0:
+        zoom_factor = math.ceil(max_sigma / 2.0)
+        kernel_size = kernel_size * zoom_factor
+        sigma_x = sigma_x / zoom_factor
+        sigma_y = sigma_y / zoom_factor
 
     sigma_x = sigma_x.view(batch_size, 1, 1)
     sigma_y = sigma_y.view(batch_size, 1, 1)
@@ -39,6 +48,7 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     xy = torch.stack([xx, yy], dim=-1)
     z = torch.einsum('b...i,b...ij,b...j->b...', xy, -0.5 * inv_covariance, xy)
     kernel = torch.exp(z) / (2 * torch.tensor(np.pi, device=device) * torch.sqrt(torch.det(covariance)).view(batch_size, 1, 1))
+
 
 
     kernel_max_1, _ = kernel.max(dim=-1, keepdim=True)  # Find max along the last dimension
