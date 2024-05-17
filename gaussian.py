@@ -3,9 +3,9 @@ import torch.nn.functional as F
 import torch
 import math
 
-def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, colours, image_size=(256, 256, 3), device="cpu"):
+def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, colors, image_size=(256, 256, 3), device="cpu"):
 
-    batch_size = colours.shape[0]
+    batch_size = colors.shape[0]
 
     # zoom the sigma and kernel size to prevent gaussian from being cropped
     max_sigma = max(sigma_x.max(), sigma_y.max())
@@ -104,7 +104,7 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     grid = F.affine_grid(theta, size=(b, c, h, w), align_corners=True)
     kernel_rgb_padded_translated = F.grid_sample(kernel_rgb_padded, grid, align_corners=True)
 
-    rgb_values_reshaped = colours.unsqueeze(-1).unsqueeze(-1)
+    rgb_values_reshaped = colors.unsqueeze(-1).unsqueeze(-1)
 
     final_image_layers = rgb_values_reshaped * kernel_rgb_padded_translated
     final_image = final_image_layers.sum(dim=0)

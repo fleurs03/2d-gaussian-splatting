@@ -45,12 +45,12 @@ def give_required_data(image_array, input_coords, image_size):
     center_coords_normalized = torch.tensor([0.5, 0.5], device=device).float()
     coords = (center_coords_normalized - coords) * 2.0
 
-    # fetching the colour of the pixels in each coordinates
-    colour_values = [image_array[coord[0], coord[1]] for coord in input_coords]
-    colour_values_np = np.array(colour_values)
-    colour_values_tensor =  torch.tensor(colour_values_np, device=device).float()
+    # fetching the color of the pixels in each coordinates
+    color_values = [image_array[coord[0], coord[1]] for coord in input_coords]
+    color_values_np = np.array(color_values)
+    color_values_tensor =  torch.tensor(color_values_np, device=device).float()
 
-    return colour_values_tensor, coords
+    return color_values_tensor, coords
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 num_samples = primary_samples + backup_samples
@@ -74,14 +74,14 @@ pixels = [image_array[coord[0], coord[1]] for coord in coords]
 pixels_np = np.array(pixels)
 random_pixels =  torch.tensor(pixels_np, device=device)
 
-colour_values, pixel_coords = give_required_data(image_array, coords, image_size)
+color_values, pixel_coords = give_required_data(image_array, coords, image_size)
 
 pixel_coords = torch.atanh(pixel_coords)
 
 sigma_values = torch.rand(num_samples, 2, device=device)
 rho_values = 2 * torch.rand(num_samples, 1, device=device) - 1
 alpha_values = torch.ones(num_samples, 1, device=device)
-W_values = torch.cat([sigma_values, rho_values, alpha_values, colour_values, pixel_coords], dim=1)
+W_values = torch.cat([sigma_values, rho_values, alpha_values, color_values, pixel_coords], dim=1)
 
 
 starting_size = primary_samples
@@ -135,11 +135,11 @@ for epoch in range(num_epochs):
     sigma_y = torch.nn.Softplus()(output[:, 1])
     rho = torch.tanh(output[:, 2])
     alpha = torch.sigmoid(output[:, 3])
-    colours = torch.sigmoid(output[:, 4:7])
+    colors = torch.tanh(output[:, 4:7])
     pixel_coords = torch.tanh(output[:, 7:9])
 
-    colours_with_alpha  = colours * alpha.view(batch_size, 1)
-    g_tensor_batch = generate_2D_gaussian_splatting(KERNEL_SIZE, sigma_x, sigma_y, rho, pixel_coords, colours_with_alpha, image_size, device)
+    colors_with_alpha  = colors * alpha.view(batch_size, 1)
+    g_tensor_batch = generate_2D_gaussian_splatting(KERNEL_SIZE, sigma_x, sigma_y, rho, pixel_coords, colors_with_alpha, image_size, device)
     # loss = combined_loss(g_tensor_batch, target_tensor, lambda_param=0.2)
     loss = nn.MSELoss()(g_tensor_batch, target_tensor)
     # use lpips loss instead of MSE loss
