@@ -2,6 +2,7 @@ import numpy as np
 import torch.nn.functional as F
 import torch
 import math
+import cv2
 
 def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, colors, image_size=(256, 256, 3), device="cpu"):
 
@@ -49,6 +50,7 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     xx, yy = ax_batch_expanded_x, ax_batch_expanded_y
 
     xy = torch.stack([xx, yy], dim=-1)
+    # breakpoint()
     z = torch.einsum('b...i,b...ij,b...j->b...', xy, -0.5 * inv_covariance, xy)
     kernel = torch.exp(z) / (2 * torch.tensor(np.pi, device=device) * torch.sqrt(torch.det(covariance)).view(batch_size, 1, 1))
 
@@ -113,3 +115,72 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     final_image = final_image.permute(1,2,0)
 
     return final_image
+
+
+def init_gaussians(num, input, target, kernel_size, device="cpu", threshold=0.1, num_bins=20):
+    with torch.no_grad():
+        # error = torch.abs(input - target).mean(dim=-1)
+        input_np = input.cpu().numpy()
+        target_np = target.cpu().numpy()
+        error = np.abs(input_np - target_np).mean(axis=-1)
+        error[error < threshold] = 0
+        bins = np.linspace(error.min(), error.max(), num_bins)
+        indices = np.digitize(error, bins)
+        idcnt = {}
+        for i in range(num_bins):
+            cnt = (indices==i).sum()
+            if cnt > 0:
+                idcnt[i] = cnt
+        idcnt.pop(min(idcnt.keys()))
+        if len(idcnt) == 0:
+            return [[np.random.uniform(-1, 1), np.random.uniform(-1, 1)] for _ in range(num)]
+        idcnt_list = list(idcnt.keys())
+        idcnt_list.sort()
+        idcnt_list = idcnt_list[::-1]
+
+        sigmas = []
+        rhos = []
+        alphas = []
+        colors = []
+        coords = []
+        for i in range(num):
+            if i >= len(idcnt_list):
+                coord_h, coord_w = np.random.randint(0, input_np.shape[0]), np.random.randint(0, input_np.shape[1])
+                coords.append([coord_h * 2 / input_np.shape[0] - 1, coord_w * 2 / input_np.shape[1] - 1]) # TBD
+                colors.append(target_np[coord_h, coord_w] - input_np[coord_h, coord_w])
+                sigma = math.sqrt(0.07 / kernel_size / kernel_size)
+                sigmas.append([sigma, sigma])
+                rhos.append([1.0])
+                alphas.append([1.0])
+                continue
+            target_id = idcnt_list[i]
+            _, component, cstats, ccenter = cv2.connectedComponentsWithStats(
+                (indices==target_id).astype(np.uint8), connectivity=4)
+            # remove cid = 0, it is the invalid area
+            csize = [ci[-1] for ci in cstats[1:]]
+            target_cid = csize.index(max(csize))+1
+            center = ccenter[target_cid][::-1]
+            coord = np.stack(np.where(component == target_cid)).T
+            dist = np.linalg.norm(coord-center, axis=1)
+            target_coord_id = np.argmin(dist)
+            coord_h, coord_w = coord[target_coord_id]
+            coords.append([coord_h * 2 / input_np.shape[0] - 1, coord_w * 2 / input_np.shape[1] - 1]) # TBD
+            colors.append(target_np[coord_h, coord_w] - input_np[coord_h, coord_w])
+            sigma = math.sqrt(idcnt_list[i] / 0.07 / kernel_size / kernel_size)
+            sigmas.append([sigma, sigma])
+            rhos.append([1.0])
+            alphas.append([1.0])
+        # breakpoint()
+        sigmas = np.array(sigmas, dtype=np.float32)
+        rhos = np.array(rhos, dtype=np.float32)
+        alphas = np.array(alphas, dtype=np.float32)
+        colors = np.array(colors, dtype=np.float32)
+        coords = np.array(coords, dtype=np.float32)
+        try:
+            W_append = torch.cat([torch.tensor(sigmas), torch.tensor(rhos), torch.tensor(alphas), torch.tensor(colors), torch.tensor(coords)], dim=-1)
+        except Exception as e:
+            print(e)
+            breakpoint()
+        # breakpoint()
+        W_append = W_append.to(device)
+        return W_append
