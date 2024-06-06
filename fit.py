@@ -25,6 +25,7 @@ def fit(config):
     primary_samples = config["primary_samples"]
     backup_samples = config["backup_samples"]
     num_epochs = config["num_epochs"]
+    init_method = config["init_method"]
     densification_interval = config["densification_interval"]
     learning_rate = config["learning_rate"]
     image_file_name = config["image_file_name"]
@@ -272,7 +273,7 @@ def fit(config):
             elif schedule == "exponential":
                 schedule_each = min(schedule_each * 2, schedule_max, max_samples - len(W))
 
-            W_append = init_gaussians(schedule_each, g_tensor_batch, target_tensor, KERNEL_SIZE, device=device, threshold=0.1, num_bins=20)
+            W_append = init_gaussians(schedule_each, g_tensor_batch, target_tensor, KERNEL_SIZE, init_method=init_method, device=device, threshold=0.1, num_bins=20)
             W_values = torch.cat([W_values, W_append], dim=0)
             W = nn.Parameter(W_values)
             optimizer = Adam([W], lr=learning_rate)

@@ -117,11 +117,24 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     return final_image
 
 
-def init_gaussians(num, input, target, kernel_size, device="cpu", threshold=0.1, num_bins=20):
+def init_gaussians(num, input, target, kernel_size, init_method="random", device="cpu", threshold=0.1, num_bins=20):
     with torch.no_grad():
         # error = torch.abs(input - target).mean(dim=-1)
         input_np = input.cpu().numpy()
         target_np = target.cpu().numpy()
+
+        if(init_method == "random"):
+            sigmas = torch.rand(num, 2, device=device)
+            rhos = 2 * torch.rand(num, 1, device=device) - 1
+            alphas = torch.ones(num, 1, device=device)
+            coords = np.random.randint(0, [input_np.shape[0], input_np.shape[1]], size=(num, 2))
+            colors = target_np[coords[:, 0], coords[:, 1]] - input_np[coords[:, 0], coords[:, 1]]
+            coords = coords * 2 / [input_np.shape[0], input_np.shape[1]] - 1
+            coords = torch.tensor(coords, device=device)
+            colors = torch.tensor(colors, device=device)
+            W_append = torch.cat([sigmas, rhos, alphas, colors, coords], dim=-1).to(device)
+            return W_append
+
         error = np.abs(input_np - target_np).mean(axis=-1)
         error[error < threshold] = 0
         bins = np.linspace(error.min(), error.max(), num_bins)
