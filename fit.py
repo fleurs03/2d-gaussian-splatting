@@ -92,8 +92,9 @@ def fit(config):
 
     sigma_values = torch.rand(num_samples, 2, device=device)
     rho_values = 2 * torch.rand(num_samples, 1, device=device) - 1
-    alpha_values = torch.ones(num_samples, 1, device=device)
-    W_values = torch.cat([sigma_values, rho_values, alpha_values, color_values, pixel_coords], dim=1) # 2, 1, 1, 3, 2
+    # alpha_values = torch.ones(num_samples, 1, device=device)
+    # W_values = torch.cat([sigma_values, rho_values, alpha_values, color_values, pixel_coords], dim=1) # 2, 1, 1, 3, 2
+    W_values = torch.cat([sigma_values, rho_values, color_values, pixel_coords], dim=1) # 2, 1, 3, 2
 
 
     starting_size = primary_samples
@@ -143,15 +144,17 @@ def fit(config):
 
         batch_size = output.shape[0]
 
+        # 2, 1, 3, 2
         sigma_x = torch.nn.Softplus()(output[:, 0])
         sigma_y = torch.nn.Softplus()(output[:, 1])
         rho = torch.tanh(output[:, 2])
-        alpha = torch.sigmoid(output[:, 3])
-        colors = torch.tanh(output[:, 4:7])
-        pixel_coords = torch.tanh(output[:, 7:9])
+        # alpha = torch.sigmoid(output[:, 3])
+        colors = torch.tanh(output[:, 3:6])
+        pixel_coords = torch.tanh(output[:, 6:8])
 
-        colors_with_alpha  = colors * alpha.view(batch_size, 1)
-        g_tensor_batch = generate_2D_gaussian_splatting(KERNEL_SIZE, sigma_x, sigma_y, rho, pixel_coords, colors_with_alpha, image_size, device)
+        # colors_with_alpha  = colors * alpha.view(batch_size, 1)
+        # g_tensor_batch = generate_2D_gaussian_splatting(KERNEL_SIZE, sigma_x, sigma_y, rho, pixel_coords, colors_with_alpha, image_size, device)
+        g_tensor_batch = generate_2D_gaussian_splatting(KERNEL_SIZE, sigma_x, sigma_y, rho, pixel_coords, colors, image_size, device)
         # loss = combined_loss(g_tensor_batch, target_tensor, lambda_param=0.2)
         loss = nn.MSELoss()(g_tensor_batch, target_tensor) # shape: [height, width, channel]
         # use lpips loss instead of MSE loss
@@ -289,3 +292,5 @@ def fit(config):
             # with open (os.path.join(directory, "log.txt"), 'w') as f:
             #     for item in loss_history:
             #         f.write(f"{item}\n")
+
+    return g_tensor_batch.cpu().detach().numpy(), W_values.cpu().detach().numpy()

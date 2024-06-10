@@ -126,13 +126,14 @@ def init_gaussians(num, input, target, kernel_size, init_method="random", device
         if(init_method == "random"):
             sigmas = torch.rand(num, 2, device=device)
             rhos = 2 * torch.rand(num, 1, device=device) - 1
-            alphas = torch.ones(num, 1, device=device)
+            # alphas = torch.ones(num, 1, device=device)
             coords = np.random.randint(0, [input_np.shape[0], input_np.shape[1]], size=(num, 2))
             colors = target_np[coords[:, 0], coords[:, 1]] - input_np[coords[:, 0], coords[:, 1]]
-            coords = coords * 2 / [input_np.shape[0], input_np.shape[1]] - 1
+            coords = coords.astype(np.float32) * 2 / [input_np.shape[0], input_np.shape[1]] - 1
             coords = torch.tensor(coords, device=device)
             colors = torch.tensor(colors, device=device)
-            W_append = torch.cat([sigmas, rhos, alphas, colors, coords], dim=-1).to(device)
+            # W_append = torch.cat([sigmas, rhos, alphas, colors, coords], dim=-1).to(device)
+            W_append = torch.cat([sigmas, rhos, colors, coords], dim=-1).to(device)
             return W_append
 
         error = np.abs(input_np - target_np).mean(axis=-1)
@@ -153,7 +154,7 @@ def init_gaussians(num, input, target, kernel_size, init_method="random", device
 
         sigmas = []
         rhos = []
-        alphas = []
+        # alphas = []
         colors = []
         coords = []
         for i in range(num):
@@ -163,8 +164,9 @@ def init_gaussians(num, input, target, kernel_size, init_method="random", device
                 colors.append(target_np[coord_h, coord_w] - input_np[coord_h, coord_w])
                 sigma = math.sqrt(0.07 / kernel_size / kernel_size)
                 sigmas.append([sigma, sigma])
-                rhos.append([1.0])
-                alphas.append([1.0])
+                # rhos.append([1.0])
+                rhos.append([0.0])
+                # alphas.append([1.0])
                 continue
             target_id = idcnt_list[i]
             _, component, cstats, ccenter = cv2.connectedComponentsWithStats(
@@ -181,16 +183,18 @@ def init_gaussians(num, input, target, kernel_size, init_method="random", device
             colors.append(target_np[coord_h, coord_w] - input_np[coord_h, coord_w])
             sigma = math.sqrt(idcnt_list[i] / 0.07 / kernel_size / kernel_size)
             sigmas.append([sigma, sigma])
-            rhos.append([1.0])
-            alphas.append([1.0])
+            # rhos.append([1.0])
+            rhos.append([0.0])
+            # alphas.append([1.0])
         # breakpoint()
         sigmas = np.array(sigmas, dtype=np.float32)
         rhos = np.array(rhos, dtype=np.float32)
-        alphas = np.array(alphas, dtype=np.float32)
+        # alphas = np.array(alphas, dtype=np.float32)
         colors = np.array(colors, dtype=np.float32)
         coords = np.array(coords, dtype=np.float32)
         try:
-            W_append = torch.cat([torch.tensor(sigmas), torch.tensor(rhos), torch.tensor(alphas), torch.tensor(colors), torch.tensor(coords)], dim=-1)
+            # W_append = torch.cat([torch.tensor(sigmas), torch.tensor(rhos), torch.tensor(alphas), torch.tensor(colors), torch.tensor(coords)], dim=-1)
+            W_append = torch.cat([torch.tensor(sigmas), torch.tensor(rhos), torch.tensor(colors), torch.tensor(coords)], dim=-1)
         except Exception as e:
             print(e)
             breakpoint()
