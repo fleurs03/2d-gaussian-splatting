@@ -1,18 +1,17 @@
 KERNEL_SIZE: 101
-image_size: [256, 384, 3]
-primary_samples: 1
-backup_samples: 0
-max_samples: 600
-num_epochs: 8001
-init_method: "selective"
+img_size: [256, 384]
+init_samples: 1
+max_samples: 150
+nepoch: 8001
+init_method: "random"
 densification_interval: 300
 learning_rate: 0.01
-image_file_name: "input/tulip.JPG"
+img_name: "input/tulip.JPG"
 show_comparison: False
 display_interval: 100
 gradient_threshold: 0.002
 gaussian_threshold: 0.002
 display_loss: False
-schedule: "exponential"
+sched_type: "exponential"
 schedule_max: 256
 schedule_interval: 1000

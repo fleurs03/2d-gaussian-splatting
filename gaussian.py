@@ -4,9 +4,9 @@ import torch
 import math
 import cv2
 
-def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, colors, image_size=(256, 256, 3), device="cpu"):
+def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coord, color, image_size=(256, 256, 3), device="cpu"):
 
-    batch_size = colors.shape[0]
+    ngaussian = color.shape[0]
 
     # zoom the sigma and kernel size to prevent gaussian from being cropped
     max_sigma = max(sigma_x.max(), sigma_y.max())
@@ -19,11 +19,11 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
         zoomed_sigma_x = sigma_x
         zoomed_sigma_y = sigma_y
 
-    zoomed_sigma_x = zoomed_sigma_x.view(batch_size, 1, 1)
-    zoomed_sigma_y = zoomed_sigma_y.view(batch_size, 1, 1)
-    rho = rho.view(batch_size, 1, 1)
+    zoomed_sigma_x = zoomed_sigma_x.view(ngaussian, 1, 1)
+    zoomed_sigma_y = zoomed_sigma_y.view(ngaussian, 1, 1)
+    rho = rho.view(ngaussian, 1, 1)
 
-    covariance = torch.stack(
+    covmx = torch.stack(
         [torch.stack([zoomed_sigma_x ** 2, rho * zoomed_sigma_x * zoomed_sigma_y], dim=-1),
         torch.stack([rho * zoomed_sigma_x * zoomed_sigma_y, zoomed_sigma_y ** 2], dim=-1)],
         dim=-2
@@ -34,7 +34,7 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     if (determinant <= 0).any():
         raise ValueError("Covariance matrix must be positive semi-definite")
 
-    inv_covariance = torch.inverse(covariance)
+    inv_covmx = torch.inverse(covmx)
 
     # choosing quite a broad range for the distribution [-5,5] to avoid any clipping
     start = torch.tensor([-5.0], device=device).view(-1, 1)
@@ -51,8 +51,12 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
 
     xy = torch.stack([xx, yy], dim=-1)
     # breakpoint()
-    z = torch.einsum('b...i,b...ij,b...j->b...', xy, -0.5 * inv_covariance, xy)
-    kernel = torch.exp(z) / (2 * torch.tensor(np.pi, device=device) * torch.sqrt(torch.det(covariance)).view(batch_size, 1, 1))
+    # breakpoint()
+    try:
+        z = torch.einsum('b...i,b...ij,b...j->b...', xy, -0.5 * inv_covmx, xy)
+    except:
+        breakpoint()
+    kernel = torch.exp(z) / (2 * torch.tensor(np.pi, device=device) * torch.sqrt(torch.det(covmx)).view(ngaussian, 1, 1))
 
 
 
@@ -60,10 +64,10 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     kernel_max_2, _ = kernel_max_1.max(dim=-2, keepdim=True)  # Find max along the second-to-last dimension
     kernel_normalized = kernel / kernel_max_2
 
-    kernel_reshaped = kernel_normalized.repeat(1, 3, 1).view(batch_size * 3, kernel_size, kernel_size)
-    kernel_rgb = kernel_reshaped.unsqueeze(0).reshape(batch_size, 3, kernel_size, kernel_size)
+    kernel_reshaped = kernel_normalized.repeat(1, 3, 1).view(ngaussian * 3, kernel_size, kernel_size)
+    kernel_rgb = kernel_reshaped.unsqueeze(0).reshape(ngaussian, 3, kernel_size, kernel_size)
 
-    # a bit confusing, but coords[:, 0] is the x-coordinate and coords[:, 1] is the y-coordinate
+    # a bit confusing, but coord[:, 0] is the x-coordinate and coord[:, 1] is the y-coordinate
     # while image_size[0] and image_size[1] are the height and width of the image, respectively
 
     padi_h = max(kernel_size - image_size[0], 0)
@@ -71,13 +75,13 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
 
     # zoom the coordinates so that padding the image won't mess up the affine transformation
 
-    zoomed_coords_x = coords[:, 0] * image_size[1] / (image_size[1] + padi_w)
-    zoomed_coords_y = coords[:, 1] * image_size[0] / (image_size[0] + padi_h)
+    zoomed_coord_x = coord[:, 0] * image_size[1] / (image_size[1] + padi_w)
+    zoomed_coord_y = coord[:, 1] * image_size[0] / (image_size[0] + padi_h)
 
-    zoomed_coords = torch.stack([zoomed_coords_x, zoomed_coords_y], dim=-1)
+    zoomed_coord = torch.stack([zoomed_coord_x, zoomed_coord_y], dim=-1)
 
     
-    padded_image_size = (image_size[0] + padi_h, image_size[1] + padi_w, image_size[2])
+    padded_image_size = (image_size[0] + padi_h, image_size[1] + padi_w)
 
     
     # calculating the padding needed to match the image size
@@ -100,13 +104,13 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coords, c
     theta = torch.zeros(b, 2, 3, dtype=torch.float32, device=device)
     theta[:, 0, 0] = 1.0
     theta[:, 1, 1] = 1.0
-    theta[:, :, 2] = zoomed_coords
+    theta[:, :, 2] = zoomed_coord
 
     # creating grid and performing grid sampling
     grid = F.affine_grid(theta, size=(b, c, h, w), align_corners=True)
     kernel_rgb_padded_translated = F.grid_sample(kernel_rgb_padded, grid, align_corners=True)
 
-    rgb_values_reshaped = colors.unsqueeze(-1).unsqueeze(-1)
+    rgb_values_reshaped = color.unsqueeze(-1).unsqueeze(-1)
 
     final_image_layers = rgb_values_reshaped * kernel_rgb_padded_translated
     final_image = final_image_layers.sum(dim=0)
@@ -127,9 +131,10 @@ def init_gaussians(num, input, target, kernel_size, init_method="random", device
             sigmas = torch.rand(num, 2, device=device)
             rhos = 2 * torch.rand(num, 1, device=device) - 1
             # alphas = torch.ones(num, 1, device=device)
+            # breakpoint()
             coords = np.random.randint(0, [input_np.shape[0], input_np.shape[1]], size=(num, 2))
             colors = target_np[coords[:, 0], coords[:, 1]] - input_np[coords[:, 0], coords[:, 1]]
-            coords = coords.astype(np.float32) * 2 / [input_np.shape[0], input_np.shape[1]] - 1
+            coords = (coords.astype(np.float32) * 2 / [input_np.shape[0], input_np.shape[1]] - 1).astype(np.float32)
             coords = torch.tensor(coords, device=device)
             colors = torch.tensor(colors, device=device)
             # W_append = torch.cat([sigmas, rhos, alphas, colors, coords], dim=-1).to(device)

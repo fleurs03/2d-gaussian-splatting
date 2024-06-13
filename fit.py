@@ -21,92 +21,69 @@ def fit(config):
 
     # extract values from the loaded config
     KERNEL_SIZE = config["KERNEL_SIZE"]
-    image_size = tuple(config["image_size"])
-    primary_samples = config["primary_samples"]
-    backup_samples = config["backup_samples"]
-    num_epochs = config["num_epochs"]
+    img_size = tuple(config["img_size"])
+    init_samples = config["init_samples"]
+    max_samples = config["max_samples"]
+    nepoch = config["nepoch"]
     init_method = config["init_method"]
     densification_interval = config["densification_interval"]
     learning_rate = config["learning_rate"]
-    image_file_name = config["image_file_name"]
+    img_name = config["img_name"]
     show_comparison = config["show_comparison"]
     display_interval = config["display_interval"]
     grad_threshold = config["gradient_threshold"]
     gauss_threshold = config["gaussian_threshold"]
     display_loss = config["display_loss"]
-    schedule = config["schedule"]
-    if schedule == "linear":
+    sched_type = config["sched_type"]
+    if sched_type == "linear":
         schedule_each = config["schedule_each"]
-        max_samples = config["max_samples"]
-    elif schedule:
-        schedule_each = primary_samples
+    elif sched_type == "exponential":
+        schedule_each = init_samples
         schedule_max = config["schedule_max"]
-        max_samples = config["max_samples"]
     schedule_interval = config["schedule_interval"]
 
+    # torch.set_default_dtype(torch.float32)
+
     # aligning the number of digits in the epoch number and sample number
-    dig_e = len(str(num_epochs))
-    dig_s = len(str(primary_samples + backup_samples))
-
-
-    def give_required_data(image_array, input_coords, image_size):
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-        # normalising pixel coordinates [-1,1]
-        coords = torch.tensor(input_coords / [image_size[0],image_size[1]], device=device).float()
-        center_coords_normalized = torch.tensor([0.5, 0.5], device=device).float()
-        coords = (center_coords_normalized - coords) * 2.0
-
-        # fetching the color of the pixels in each coordinates
-        color_values = [image_array[coord[0], coord[1]] for coord in input_coords]
-        color_values_np = np.array(color_values)
-        color_values_tensor =  torch.tensor(color_values_np, device=device).float()
-
-        return color_values_tensor, coords
+    dig_e = len(str(nepoch))
+    dig_s = len(str(max_samples))
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    num_samples = primary_samples + backup_samples
+    nsample = max_samples
 
-    PADDING = KERNEL_SIZE // 2
-    image_path = image_file_name
-    original_image = Image.open(image_path)
+    # refactor the code above
 
-    original_image = original_image.resize((image_size[0],image_size[1]))
-    original_image = original_image.convert('RGB')
-    original_array = np.array(original_image) # this will cause dimension swap
-    image_size = (image_size[1], image_size[0], image_size[2])
-    original_array = original_array / 255.0
-    height, width, _ = original_array.shape
+    gt = Image.open(img_name) # (width, height)
+    gt = gt.resize(img_size)
+    gt = gt.convert('RGB')
+    gt_array = np.array(gt) # this will cause dimension swap
+    img_size = (img_size[1], img_size[0]) # (height, width)
+    gt_array = gt_array / 255.0
+    # height, width, _ = gt_array.shape
 
-    image_array = original_array
-    target_tensor = torch.tensor(image_array, dtype=torch.float32, device=device)
-    coords = np.random.randint(0, [height, width], size=(num_samples, 2))
-    random_pixel_means = torch.tensor(coords, device=device)
-    pixels = [image_array[coord[0], coord[1]] for coord in coords]
-    pixels_np = np.array(pixels)
-    random_pixels =  torch.tensor(pixels_np, device=device)
+    gt_tensor = torch.tensor(gt_array, dtype=torch.get_default_dtype(), device=device)
+    coords = np.random.randint(0, [img_size[0], img_size[1]], size=(nsample, 2))
+    colors = np.array([gt_array[coord[0], coord[1]] for coord in coords])
+    coords = coords / [img_size[0], img_size[1]] * 2 - 1
 
-    color_values, pixel_coords = give_required_data(image_array, coords, image_size)
+    coords = torch.tensor(coords, dtype=torch.get_default_dtype(), device=device)
+    coords = torch.atanh(coords) # it will be activated with tanh
 
-    pixel_coords = torch.atanh(pixel_coords)
+    colors = torch.tensor(colors, dtype=torch.get_default_dtype(), device=device)
 
-    sigma_values = torch.rand(num_samples, 2, device=device)
-    rho_values = 2 * torch.rand(num_samples, 1, device=device) - 1
-    # alpha_values = torch.ones(num_samples, 1, device=device)
-    # W_values = torch.cat([sigma_values, rho_values, alpha_values, color_values, pixel_coords], dim=1) # 2, 1, 1, 3, 2
-    W_values = torch.cat([sigma_values, rho_values, color_values, pixel_coords], dim=1) # 2, 1, 3, 2
+    sigmas= torch.rand(nsample, 2, device=device)
+    rhos = 2 * torch.rand(nsample, 1, device=device) - 1
 
+    W_values = torch.cat([sigmas, rhos, colors, coords], dim=1) # 2, 1, 3, 2
 
-    starting_size = primary_samples
-    left_over_size = backup_samples
-    persistent_mask = torch.cat([torch.ones(starting_size, dtype=bool),torch.zeros(left_over_size, dtype=bool)], dim=0)
-    current_marker = starting_size
+    effective_mask = torch.cat([torch.ones(init_samples, dtype=bool),torch.zeros(max_samples - init_samples, dtype=bool)], dim=0)
+    next_gaussian = init_samples
 
 
     # get current date and time as string
     now = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
 
-    subj = image_file_name.split('/')[-1].split('.')[0]
+    subj = img_name.split('/')[-1].split('.')[0]
     directory = f"output/{subj}/{now}"
 
     os.makedirs("output", exist_ok=True)
@@ -122,41 +99,39 @@ def fit(config):
 
     run_out_of_points = False
 
-    for epoch in range(num_epochs):
+    for epoch in range(nepoch):
 
-        #find indices to remove and update the persistent mask
+        #find indices to remove and update the effective mask
         if epoch % (densification_interval + 1) == 0 and epoch > 0:
-            indices_to_remove = (torch.sigmoid(W[:, 3]) < 0.01).nonzero(as_tuple=True)[0]
+            # !!! dimension need to be checked.
+            # maybe set 0.01 as a constant variable
+            indices_to_prune = (torch.norm(torch.sigmoid(W[:, 3:6]), dim=1, p=2) < 0.01).nonzero(as_tuple=True)[0]
 
-            if len(indices_to_remove) > 0:
-                print(f"number of pruned points: {len(indices_to_remove)}")
+            if len(indices_to_prune) > 0:
+                print(f"number of pruned points: {len(indices_to_prune)}")
 
-            persistent_mask[indices_to_remove] = False
+            effective_mask[indices_to_prune] = False
 
-            # Zero-out parameters and their gradients at every epoch using the persistent mask
-            W.data[~persistent_mask] = 0.0
+            # Zero-out parameters and their gradients at every epoch using the effective mask
+            W.data[~effective_mask] = 0.0
 
     
         gc.collect()
         torch.cuda.empty_cache()
 
-        output = W[persistent_mask]
-
-        batch_size = output.shape[0]
+        output = W[effective_mask]
 
         # 2, 1, 3, 2
         sigma_x = torch.nn.Softplus()(output[:, 0])
         sigma_y = torch.nn.Softplus()(output[:, 1])
         rho = torch.tanh(output[:, 2])
-        # alpha = torch.sigmoid(output[:, 3])
-        colors = torch.tanh(output[:, 3:6])
-        pixel_coords = torch.tanh(output[:, 6:8])
+        color = torch.tanh(output[:, 3:6])
+        coord = torch.tanh(output[:, 6:8])
 
-        # colors_with_alpha  = colors * alpha.view(batch_size, 1)
-        # g_tensor_batch = generate_2D_gaussian_splatting(KERNEL_SIZE, sigma_x, sigma_y, rho, pixel_coords, colors_with_alpha, image_size, device)
-        g_tensor_batch = generate_2D_gaussian_splatting(KERNEL_SIZE, sigma_x, sigma_y, rho, pixel_coords, colors, image_size, device)
-        # loss = combined_loss(g_tensor_batch, target_tensor, lambda_param=0.2)
-        loss = nn.MSELoss()(g_tensor_batch, target_tensor) # shape: [height, width, channel]
+        # `rc` stands for `reconstructed`
+        rc_tensor = generate_2D_gaussian_splatting(KERNEL_SIZE, sigma_x, sigma_y, rho, coord, color, img_size, device)
+        # loss = combined_loss(rc_tensor, gt_tensor, lambda_param=0.2)
+        loss = nn.MSELoss()(rc_tensor, gt_tensor) # shape: [height, width, channel]
         # use lpips loss instead of MSE loss
 
         optimizer.zero_grad()
@@ -164,13 +139,13 @@ def fit(config):
         loss.backward()
 
         # apply zeroing out of gradients at every epoch
-        if persistent_mask is not None:
-            W.grad.data[~persistent_mask] = 0.0
+        if effective_mask is not None:
+            W.grad.data[~effective_mask] = 0.0
 
         if epoch % densification_interval == 0 and epoch > 0:
             # calculate the norm of gradients
-            gradient_norms = torch.norm(W.grad[persistent_mask][:, 7:9], dim=1, p=2)
-            gaussian_norms = torch.norm(torch.sigmoid(W.data[persistent_mask][:, 0:2]), dim=1, p=2)
+            gradient_norms = torch.norm(W.grad[effective_mask][:, 6:8], dim=1, p=2)
+            gaussian_norms = torch.norm(torch.sigmoid(W.data[effective_mask][:, 0:2]), dim=1, p=2)
 
             sorted_grads, sorted_grads_indices = torch.sort(gradient_norms, descending=True)
             sorted_gauss, sorted_gauss_indices = torch.sort(gaussian_norms, descending=True)
@@ -187,16 +162,16 @@ def fit(config):
 
             # split points with large coordinate gradient and large gaussian values and descale their gaussian
             if not run_out_of_points and len(common_indices) > 0:
-                start_index = current_marker + 1
-                end_index = current_marker + 1 + len(common_indices)
+                start_index = next_gaussian
+                end_index = next_gaussian + len(common_indices)
                 if end_index < W.data.shape[0]:
                     print(f"Number of splitted points: {len(common_indices)}")
-                    persistent_mask[start_index: end_index] = True
+                    effective_mask[start_index: end_index] = True
                     W.data[start_index:end_index, :] = W.data[common_indices, :]
                     scale_reduction_factor = 1.6
                     W.data[start_index:end_index, 0:2] /= scale_reduction_factor
                     W.data[common_indices, 0:2] /= scale_reduction_factor
-                    current_marker = current_marker + len(common_indices)
+                    next_gaussian = next_gaussian + len(common_indices)
                 else:
                     print(f"Try to split {len(common_indices)} points, but no sufficient backup points left...")
                     run_out_of_points = True
@@ -204,13 +179,13 @@ def fit(config):
 
             # clone it points with large coordinate gradient and small gaussian values
             if not run_out_of_points and len(distinct_indices) > 0:
-                start_index = current_marker + 1
-                end_index = current_marker + 1 + len(distinct_indices)
+                start_index = next_gaussian
+                end_index = next_gaussian + len(distinct_indices)
                 if end_index < W.data.shape[0]:
                     print(f"number of cloned points: {len(distinct_indices)}")
-                    persistent_mask[start_index: end_index] = True
+                    effective_mask[start_index: end_index] = True
                     W.data[start_index:end_index, :] = W.data[distinct_indices, :]
-                    current_marker = current_marker + len(distinct_indices)
+                    next_gaussian = next_gaussian + len(distinct_indices)
                 else:
                     print(f"Try to clone {len(common_indices)} points, but no sufficient backup points left...")
                     run_out_of_points = True
@@ -228,17 +203,19 @@ def fit(config):
             file_path = os.path.join(directory, filename)
 
             if show_comparison:
-                num_subplots = 3 if display_loss else 2
-                fig_size_width = 18 if display_loss else 12
+                nsubplot = 3 if display_loss else 2
+                
+                # fig_size_width = 18 if display_loss else 12
+                # fig, ax = plt.subplots(1, num_subplots, figsize=(fig_size_width, 6))  # Adjust subplot to 1x3
 
-                fig, ax = plt.subplots(1, num_subplots, figsize=(fig_size_width, 6))  # Adjust subplot to 1x3
+                fig, ax = plt.subplots(1, nsubplot)
 
-                ax[0].imshow(g_tensor_batch.cpu().detach().numpy())
-                ax[0].set_title('2D Gaussian Splatting')
+                ax[0].imshow(rc_tensor.cpu().detach().numpy())
+                ax[0].set_title('Reconstructed')
                 ax[0].axis('off')
 
-                ax[1].imshow(target_tensor.cpu().detach().numpy())
-                ax[1].set_title('Ground Truth')
+                ax[1].imshow(gt_tensor.cpu().detach().numpy())
+                ax[1].set_title('Ground truth')
                 ax[1].axis('off')
 
                 if display_loss:
@@ -246,7 +223,7 @@ def fit(config):
                     ax[2].set_title('Loss vs. Epochs')
                     ax[2].set_xlabel('Epoch')
                     ax[2].set_ylabel('Loss')
-                    ax[2].set_xlim(0, num_epochs)  # set x-axis limits
+                    ax[2].set_xlim(0, nepoch)  # set x-axis limits
 
                 # display the image
                 # plt.show(block=False)
@@ -259,28 +236,33 @@ def fit(config):
                 plt.close()  # Close the current figure
                 
             else:
-
-                img = Image.fromarray((g_tensor_batch.cpu().detach().numpy() * 255).astype(np.uint8))
                 # save the image
+                img = Image.fromarray((rc_tensor.cpu().detach().numpy() * 255).astype(np.uint8))
                 img.save(file_path)
             
 
-            print(f"Epoch {epoch+1:0{dig_e}}/{num_epochs}, Loss: {loss.item()}, on {len(output):0{dig_s}} points")
+            print(f"Epoch {epoch:0{dig_e}}/{nepoch}, Loss: {loss.item()}, on {len(output):0{dig_s}} points")
             with open (os.path.join(directory, "log.txt"), 'a') as f:
-                f.write(f"Epoch {epoch+1:0{dig_e}}/{num_epochs}, Loss: {loss.item()}, on {len(output):0{dig_s}} points\n")
+                f.write(f"Epoch {epoch:0{dig_e}}/{nepoch}, Loss: {loss.item()}, on {len(output):0{dig_s}} points\n")
         # print(epoch)
-        if (schedule == "linear" or schedule == "exponential") and epoch % schedule_interval == 0 and epoch > 0:
-            if schedule == "linear":
-                schedule_each = min(schedule_each, max_samples - len(W))
+        if (sched_type == "linear" or sched_type == "exponential") and epoch % schedule_interval == 0 and epoch > 0:
+            if sched_type == "linear":
+                schedule_each = min(schedule_each, nsample - next_gaussian)
                 pass
-            elif schedule == "exponential":
-                schedule_each = min(schedule_each * 2, schedule_max, max_samples - len(W))
+            elif sched_type == "exponential":
+                schedule_each = min(schedule_each * 2, schedule_max, nsample - next_gaussian)
+            W_append = init_gaussians(schedule_each, rc_tensor, gt_tensor, KERNEL_SIZE, init_method=init_method, device=device, threshold=0.1, num_bins=20)
+            start_index = next_gaussian
+            end_index = next_gaussian + len(W_append)
+            print(f"Number of newly added points: {len(W_append)}")
+            effective_mask[start_index: end_index] = True
+            W.data[start_index:end_index, :] = W_append
+            next_gaussian = next_gaussian + len(W_append)
 
-            W_append = init_gaussians(schedule_each, g_tensor_batch, target_tensor, KERNEL_SIZE, init_method=init_method, device=device, threshold=0.1, num_bins=20)
-            W_values = torch.cat([W_values, W_append], dim=0)
-            W = nn.Parameter(W_values)
-            optimizer = Adam([W], lr=learning_rate)
-            persistent_mask = torch.cat([persistent_mask, torch.ones(schedule_each, dtype=bool)], dim=0)
+            # W_values = torch.cat([W_values, W_append], dim=0)
+            # W = nn.Parameter(W_values)
+            # optimizer = Adam([W], lr=learning_rate)
+            # effective_mask = torch.cat([effective_mask, torch.ones(schedule_each, dtype=bool)], dim=0)
         else:
             # learning_rate = learning_rate ** schedule_each
             pass
@@ -293,4 +275,11 @@ def fit(config):
             #     for item in loss_history:
             #         f.write(f"{item}\n")
 
-    return g_tensor_batch.cpu().detach().numpy(), W_values.cpu().detach().numpy()
+    return rc_tensor.cpu().detach().numpy(), W_values.cpu().detach().numpy()
+
+if __name__ == '__main__':
+    # read the config.yml file
+    with open('config.yaml', 'r') as config_file:
+        config = yaml.safe_load(config_file)
+    
+    fit(config)
