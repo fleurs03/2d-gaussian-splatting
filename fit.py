@@ -244,27 +244,23 @@ def fit(config):
             print(f"Epoch {epoch:0{dig_e}}/{nepoch}, Loss: {loss.item()}, on {len(output):0{dig_s}} points")
             with open (os.path.join(directory, "log.txt"), 'a') as f:
                 f.write(f"Epoch {epoch:0{dig_e}}/{nepoch}, Loss: {loss.item()}, on {len(output):0{dig_s}} points\n")
-        # print(epoch)
+
         if (sched_type == "linear" or sched_type == "exponential") and epoch % schedule_interval == 0 and epoch > 0:
             if sched_type == "linear":
                 schedule_each = min(schedule_each, nsample - next_gaussian)
                 pass
             elif sched_type == "exponential":
                 schedule_each = min(schedule_each * 2, schedule_max, nsample - next_gaussian)
-            W_append = init_gaussians(schedule_each, rc_tensor, gt_tensor, KERNEL_SIZE, init_method=init_method, device=device, threshold=0.1, num_bins=20)
-            start_index = next_gaussian
-            end_index = next_gaussian + len(W_append)
-            print(f"Number of newly added points: {len(W_append)}")
-            effective_mask[start_index: end_index] = True
-            W.data[start_index:end_index, :] = W_append
-            next_gaussian = next_gaussian + len(W_append)
 
-            # W_values = torch.cat([W_values, W_append], dim=0)
-            # W = nn.Parameter(W_values)
-            # optimizer = Adam([W], lr=learning_rate)
-            # effective_mask = torch.cat([effective_mask, torch.ones(schedule_each, dtype=bool)], dim=0)
+            if schedule_each > 0:
+                W_append = init_gaussians(schedule_each, rc_tensor, gt_tensor, KERNEL_SIZE, init_method=init_method, device=device, threshold=0.1, num_bins=20)
+                start_index = next_gaussian
+                end_index = next_gaussian + len(W_append)
+                print(f"Number of newly added points: {len(W_append)}")
+                effective_mask[start_index: end_index] = True
+                W.data[start_index:end_index, :] = W_append
+                next_gaussian = next_gaussian + len(W_append)
         else:
-            # learning_rate = learning_rate ** schedule_each
             pass
 
         # if run_out_of_points:
