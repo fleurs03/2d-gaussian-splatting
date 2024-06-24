@@ -12,6 +12,7 @@ from datetime import datetime
 from PIL import Image
 
 from gaussian import generate_2D_gaussian_splatting, init_gaussians
+from loss import l1_ssim_loss, mse_ssim_loss
 
 # # read the config.yml file
 # with open('config.yaml', 'r') as config_file:
@@ -132,7 +133,8 @@ def fit(config):
 
         # `rc` stands for `reconstructed`
         rc_tensor = generate_2D_gaussian_splatting(KERNEL_SIZE, sigma_x, sigma_y, rho, coord, color, img_size, device)
-        # loss = combined_loss(rc_tensor, gt_tensor, lambda_param=0.2)
+        # loss = l1_ssim_loss(rc_tensor, gt_tensor, w=0.2)
+        # loss = mse_ssim_loss(rc_tensor, gt_tensor, w=0.2)
         loss = nn.MSELoss()(rc_tensor, gt_tensor) # shape: [height, width, channel]
         # use lpips loss instead of MSE loss
 

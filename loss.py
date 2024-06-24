@@ -84,5 +84,8 @@ def d_ssim_loss(pred, target, window_size=11, size_average=True):
     return 1 - ssim(pred, target, window_size, size_average)
 
 # Combined Loss
-def combined_loss(pred, target, w=0.5):
+def l1_ssim_loss(pred, target, w=0.2):
+    return (1 - w) * torch.nn.L1Loss()(pred, target) + w * d_ssim_loss(pred, target)
+
+def mse_ssim_loss(pred, target, w=0.2):
     return (1 - w) * torch.nn.MSELoss()(pred, target) + w * d_ssim_loss(pred, target)
