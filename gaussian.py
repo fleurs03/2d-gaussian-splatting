@@ -147,7 +147,7 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coord, co
     return final_image
 
 
-def init_gaussians(num, input, target, kernel_size, init_method="random", device="cpu", threshold=0.1, num_bins=20):
+def init_gaussians(num, input, target, kernel_size, init_method="random", device="cpu", threshold=0.1, num_bins=200):
     with torch.no_grad():
         # error = torch.abs(input - target).mean(dim=-1)
         input_np = input.cpu().numpy()
