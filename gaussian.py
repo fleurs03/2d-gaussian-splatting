@@ -56,6 +56,32 @@ def generate_2D_gaussian_splatting(kernel_size, sigma_x, sigma_y, rho, coord, co
         z = torch.einsum('b...i,b...ij,b...j->b...', xy, -0.5 * inv_covmx, xy)
     except:
         breakpoint()
+
+    # e.g. [1, 11, 11, 2], [100, 1, 1, 2, 2], [1, 11, 11, 2] -> [100, 11, 11]
+    # implement einsunm manually
+    # z = (xy.unsqueeze(1) - xy.unsqueeze(2)) @ inv_covmx @ (xy.unsqueeze(1) - xy.unsqueeze(2)).transpose(2, 3)
+    # z = z.squeeze(1).squeeze(1)
+    # breakpoint()
+
+    # # Resahpe inv_convmx
+    # z1 = torch.einsum('b...i,b...ij,b...j->b...', xy, -0.5 * inv_covmx, xy)
+
+    # inv_convmx_reshaped = inv_covmx.squeeze(1).squeeze(1) * -0.5
+
+    # # Matrix multipication
+    # xy = xy.expand(ngaussian, -1, -1, -1)
+    # xy_reshaped = xy.reshape(ngaussian, kernel_size * kernel_size, 2)
+    # step1_result = torch.matmul(xy_reshaped, inv_convmx_reshaped)
+
+    # # Reshape for dot product
+    # step1_result_reshaped = step1_result.reshape(ngaussian, kernel_size, kernel_size, 2)
+
+    # # Dot product
+    # z = torch.sum(step1_result_reshaped * xy, dim=-1)
+    
+    # # breakpoint()
+
+
     kernel = torch.exp(z) / (2 * torch.tensor(np.pi, device=device) * torch.sqrt(torch.det(covmx)).view(ngaussian, 1, 1))
 
 
@@ -134,7 +160,7 @@ def init_gaussians(num, input, target, kernel_size, init_method="random", device
             # breakpoint()
             coords = np.random.randint(0, [input_np.shape[0], input_np.shape[1]], size=(num, 2))
             colors = target_np[coords[:, 0], coords[:, 1]] - input_np[coords[:, 0], coords[:, 1]]
-            coords = (coords.astype(np.float32) * 2 / [input_np.shape[0], input_np.shape[1]] - 1).astype(np.float32)
+            coords = (-coords.astype(np.float32) * 2 / [input_np.shape[0], input_np.shape[1]] + 1).astype(np.float32)
             coords = torch.tensor(coords, device=device)
             colors = torch.tensor(colors, device=device)
             # W_append = torch.cat([sigmas, rhos, alphas, colors, coords], dim=-1).to(device)
@@ -165,7 +191,7 @@ def init_gaussians(num, input, target, kernel_size, init_method="random", device
         for i in range(num):
             if i >= len(idcnt_list):
                 coord_h, coord_w = np.random.randint(0, input_np.shape[0]), np.random.randint(0, input_np.shape[1])
-                coords.append([coord_h * 2 / input_np.shape[0] - 1, coord_w * 2 / input_np.shape[1] - 1]) # TBD
+                coords.append([-coord_h * 2 / input_np.shape[0] + 1, -coord_w * 2 / input_np.shape[1] + 1]) # TBD
                 colors.append(target_np[coord_h, coord_w] - input_np[coord_h, coord_w])
                 sigma = math.sqrt(0.07 / kernel_size / kernel_size)
                 sigmas.append([sigma, sigma])
@@ -184,7 +210,7 @@ def init_gaussians(num, input, target, kernel_size, init_method="random", device
             dist = np.linalg.norm(coord-center, axis=1)
             target_coord_id = np.argmin(dist)
             coord_h, coord_w = coord[target_coord_id]
-            coords.append([coord_h * 2 / input_np.shape[0] - 1, coord_w * 2 / input_np.shape[1] - 1]) # TBD
+            coords.append([-coord_h * 2 / input_np.shape[0] + 1, -coord_w * 2 / input_np.shape[1] + 1]) # TBD
             colors.append(target_np[coord_h, coord_w] - input_np[coord_h, coord_w])
             sigma = math.sqrt(idcnt_list[i] / 0.07 / kernel_size / kernel_size)
             sigmas.append([sigma, sigma])

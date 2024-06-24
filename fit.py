@@ -63,13 +63,15 @@ def fit(config):
 
     gt_tensor = torch.tensor(gt_array, dtype=torch.get_default_dtype(), device=device)
     coords = np.random.randint(0, [img_size[0], img_size[1]], size=(nsample, 2))
+
     colors = np.array([gt_array[coord[0], coord[1]] for coord in coords])
-    coords = coords / [img_size[0], img_size[1]] * 2 - 1
+    coords = -coords / [img_size[0], img_size[1]] * 2 + 1
 
     coords = torch.tensor(coords, dtype=torch.get_default_dtype(), device=device)
     coords = torch.atanh(coords) # it will be activated with tanh
 
     colors = torch.tensor(colors, dtype=torch.get_default_dtype(), device=device)
+    colors = torch.atanh(colors) # it will be activated with tanh
 
     sigmas= torch.rand(nsample, 2, device=device)
     rhos = 2 * torch.rand(nsample, 1, device=device) - 1
@@ -239,7 +241,6 @@ def fit(config):
                 # save the image
                 img = Image.fromarray((rc_tensor.cpu().detach().numpy() * 255).astype(np.uint8))
                 img.save(file_path)
-            
 
             print(f"Epoch {epoch:0{dig_e}}/{nepoch}, Loss: {loss.item()}, on {len(output):0{dig_s}} points")
             with open (os.path.join(directory, "log.txt"), 'a') as f:
