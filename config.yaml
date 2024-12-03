@@ -11,6 +11,7 @@ show_comparison: False
 display_interval: 100
 gradient_threshold: 0.002
 gaussian_threshold: 0.002
+loss_fn: "l1_ssim"
 display_loss: False
 sched_type: "exponential"
 schedule_max: 256

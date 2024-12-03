@@ -34,6 +34,13 @@ def fit(config):
     display_interval = config["display_interval"]
     grad_threshold = config["gradient_threshold"]
     gauss_threshold = config["gaussian_threshold"]
+    loss_fn = config["loss_fn"]
+    if loss_fn == "l1_ssim":
+        loss_fn = l1_ssim_loss
+    elif loss_fn == "mse_ssim":
+        loss_fn = mse_ssim_loss
+    elif loss_fn == "mse":
+        loss_fn = nn.MSELoss()
     display_loss = config["display_loss"]
     sched_type = config["sched_type"]
     if sched_type == "linear":
@@ -135,7 +142,7 @@ def fit(config):
         rc_tensor = generate_2D_gaussian_splatting(KERNEL_SIZE, sigma_x, sigma_y, rho, coord, color, img_size, device)
         # loss = l1_ssim_loss(rc_tensor, gt_tensor, w=0.2)
         # loss = mse_ssim_loss(rc_tensor, gt_tensor, w=0.2)
-        loss = nn.MSELoss()(rc_tensor, gt_tensor) # shape: [height, width, channel]
+        loss = loss_fn(rc_tensor, gt_tensor) # shape: [height, width, channel]
         # use lpips loss instead of MSE loss
 
         optimizer.zero_grad()
