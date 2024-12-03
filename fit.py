@@ -281,7 +281,8 @@ def fit(config):
             #     for item in loss_history:
             #         f.write(f"{item}\n")
 
-    return rc_tensor.cpu().detach().numpy(), W_values.cpu().detach().numpy()
+    # return rc_tensor.cpu().detach().numpy(), W_values.cpu().detach().numpy()
+    return rc_tensor.cpu().detach(), gt_tensor.cpu().detach()
 
 if __name__ == '__main__':
     # read the config.yml file
